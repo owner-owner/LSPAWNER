@@ -30,8 +30,8 @@ const RECONNECT_DELAY_MS = 5000;
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 let spawnerInterval: ReturnType<typeof setInterval> | null = null;
 let antiAfkInterval: ReturnType<typeof setInterval> | null = null;
+let slot52Interval: ReturnType<typeof setInterval> | null = null;
 
-// تتبع حالة القوائم (0 = القائمة الأولى Chest عادي، 1 = القائمة الثانية Double Chest)
 let currentWindowStep = 0;
 
 function scheduleReconnect(reason: string) {
@@ -39,6 +39,7 @@ function scheduleReconnect(reason: string) {
   if (reconnectTimeout) return;
   if (spawnerInterval) clearInterval(spawnerInterval);
   if (antiAfkInterval) clearInterval(antiAfkInterval);
+  if (slot52Interval) clearInterval(slot52Interval);
 
   reconnectTimeout = setTimeout(() => {
     reconnectTimeout = null;
@@ -61,43 +62,80 @@ function startBot() {
     console.log('[Spawner-Bot] ✅ تم الاتصال بالهوست وقبول الحساب!');
   });
 
-  // دالة البحث والتفاعل مع السبونر (Right Click)
+  // دالة الضغط على الخانة 52
+  async function clickSlot52() {
+    try {
+      console.log('[Spawner-Bot] 🔘 الضغط الدوري على الخانة 52...');
+      await bot.clickWindow(52, 0, 0);
+    } catch (err) {
+      try {
+        await bot.simpleClick.left(52);
+      } catch (retryErr) {
+        console.log('[Spawner-Bot] ⚠️ فشل الضغط على الخانة 52.');
+      }
+    }
+  }
+
+  // دالة البحث والتفاعل المباشر مع السبونر (Right Click)
   async function interactWithSpawner() {
     const spawnerBlock = bot.findBlock({
       matching: (block) => block.name.includes('spawner'),
-      maxDistance: 5
+      maxDistance: 4
     });
 
     if (spawnerBlock) {
       try {
-        console.log('[Spawner-Bot] 🎯 العثور على السبونر! جاري الضغط كليك يمين...');
-        currentWindowStep = 0; // إعادة الترتيب للبداية عند فتح السبونر
+        console.log('[Spawner-Bot] 🎯 العثور على السبونر! جاري النظر والضغط كليك يمين...');
+        currentWindowStep = 0;
+        if (slot52Interval) clearInterval(slot52Interval);
+
+        // 1. النظر نحو السبونر أولاً لضمان القبول من السيرفر
+        await bot.lookAt(spawnerBlock.position.offset(0.5, 0.5, 0.5));
+        
+        // 2. الضغط كليك يمين
         await bot.activateBlock(spawnerBlock);
+        console.log('[Spawner-Bot] ✅ تم إرسال أمر الضغط على السبونر بنجاح!');
       } catch (err) {
         console.log('[Spawner-Bot] ❌ خطأ أثناء الضغط على السبونر:', err);
       }
     } else {
-      console.log('[Spawner-Bot] ⚠️ لم يتم العثور على سبونر في نطاق 5 بلوكات!');
+      console.log('[Spawner-Bot] ⚠️ لم يتم العثور على سبونر قادم في نطاق 4 بلوكات!');
     }
   }
 
-  // التعامل مع فتح القوائم والتنقل فيها
-  bot.on('windowOpen', (window) => {
+  // التعامل مع فتح القوائم
+  bot.on('windowOpen', async (window) => {
+    console.log(`[Spawner-Bot] 📂 تم فتح واجهة بنجاح (حجمها: ${window.slots.length} خانة)!`);
+
     setTimeout(async () => {
-      try {
-        if (currentWindowStep === 0) {
-          console.log('[Spawner-Bot] 🔘 الواجهة الأولى (Chest): الضغط على الخانة 11');
+      if (currentWindowStep === 0) {
+        // الواجهة الأولى: ضغط الخانة 11
+        console.log('[Spawner-Bot] 🔘 الواجهة الأولى: الضغط على الخانة 11...');
+        try {
           await bot.clickWindow(11, 0, 0);
-          currentWindowStep = 1; // الانتقال للخطوة التالية للواجهة القادمة
-        } else if (currentWindowStep === 1) {
-          console.log('[Spawner-Bot] 🔘 الواجهة الثانية (Double Chest): الضغط على الخانة 52');
-          await bot.clickWindow(52, 0, 0);
-          currentWindowStep = 0; // إعادة ضبط الخطوات بعد الانتهاء
+        } catch (e) {
+          await bot.simpleClick.left(11);
         }
-      } catch (err) {
-        console.log('[Spawner-Bot] ❌ خطأ في الضغط داخل الواجهة:', err);
+        currentWindowStep = 1;
+      } else if (currentWindowStep === 1) {
+        // الواجهة الثانية: ضغط الخانة 52 وتكرارها كل 15 ثانية
+        console.log('[Spawner-Bot] 🔘 الواجهة الثانية: بدء تكرار الضغط على الخانة 52 كل 15 ثانية...');
+        await clickSlot52();
+
+        if (slot52Interval) clearInterval(slot52Interval);
+        slot52Interval = setInterval(() => {
+          clickSlot52();
+        }, 15000);
       }
     }, 1200);
+  });
+
+  bot.on('windowClose', () => {
+    console.log('[Spawner-Bot] 🔒 تم إغلاق القائمة.');
+    if (slot52Interval) {
+      clearInterval(slot52Interval);
+      slot52Interval = null;
+    }
   });
 
   // 🔑 إدارة الدخول والتسجيل التلقائي
@@ -116,30 +154,31 @@ function startBot() {
     }
   });
 
-  // 🌐 بدء التفاعل مع السبونر فور رسبونة البوت
+  // 🌐 بدء التفاعل فور رسبونة البوت
   bot.on('spawn', () => {
     console.log('[Spawner-Bot] 🎉 البوت ريسبون (Spawn) وظهر داخل العالم!');
 
     if (spawnerInterval) clearInterval(spawnerInterval);
     if (antiAfkInterval) clearInterval(antiAfkInterval);
+    if (slot52Interval) clearInterval(slot52Interval);
 
-    // 1. حركة قفز خفيفة كل 30 ثانية لتفادي طرد الـ AFK
+    // قفز خفيف كل 30 ثانية لتفادي الـ AFK
     antiAfkInterval = setInterval(() => {
       bot.setControlState('jump', true);
       setTimeout(() => bot.setControlState('jump', false), 500);
     }, 30000);
 
-    // 2. البحث عن السبونر والضغط عليه بعد 5 ثوانٍ من الدخول
+    // محاولة التفاعل الأولى بعد 4 ثوانٍ من الدخول
     setTimeout(() => {
       bot.setControlState('sneak', true);
       interactWithSpawner();
 
-      // تكرار العملية تلقائياً كل 5 دقائق
+      // تكرار محاولة فتح السبونر كل 3 دقائق
       spawnerInterval = setInterval(() => {
         interactWithSpawner();
-      }, 300000);
+      }, 180000);
 
-    }, 5000);
+    }, 4000);
   });
 
   bot.on('kicked', (reason) => {
@@ -161,4 +200,3 @@ function startBot() {
 }
 
 startBot();
-  
