@@ -62,17 +62,13 @@ function startBot() {
     console.log('[Spawner-Bot] ✅ تم الاتصال بالهوست وقبول الحساب!');
   });
 
-  // دالة الضغط على الخانة 52
+  // دالة الضغط على الخانة 52 (left click: button=0, mode=0)
   async function clickSlot52() {
     try {
       console.log('[Spawner-Bot] 🔘 الضغط الدوري على الخانة 52...');
       await bot.clickWindow(52, 0, 0);
     } catch (err) {
-      try {
-        await bot.simpleClick.left(52);
-      } catch (retryErr) {
-        console.log('[Spawner-Bot] ⚠️ فشل الضغط على الخانة 52.');
-      }
+      console.log('[Spawner-Bot] ⚠️ فشل الضغط على الخانة 52 (ربما الواجهة مغلقة).');
     }
   }
 
@@ -89,17 +85,17 @@ function startBot() {
         currentWindowStep = 0;
         if (slot52Interval) clearInterval(slot52Interval);
 
-        // 1. النظر نحو السبونر أولاً لضمان القبول من السيرفر
+        // النظر نحو مركز السبونر قبل الضغط
         await bot.lookAt(spawnerBlock.position.offset(0.5, 0.5, 0.5));
         
-        // 2. الضغط كليك يمين
+        // الضغط كليك يمين
         await bot.activateBlock(spawnerBlock);
         console.log('[Spawner-Bot] ✅ تم إرسال أمر الضغط على السبونر بنجاح!');
       } catch (err) {
         console.log('[Spawner-Bot] ❌ خطأ أثناء الضغط على السبونر:', err);
       }
     } else {
-      console.log('[Spawner-Bot] ⚠️ لم يتم العثور على سبونر قادم في نطاق 4 بلوكات!');
+      console.log('[Spawner-Bot] ⚠️ لم يتم العثور على سبونر في نطاق 4 بلوكات!');
     }
   }
 
@@ -114,7 +110,7 @@ function startBot() {
         try {
           await bot.clickWindow(11, 0, 0);
         } catch (e) {
-          await bot.simpleClick.left(11);
+          console.log('[Spawner-Bot] ❌ خطأ أثناء الضغط على الخانة 11:', e);
         }
         currentWindowStep = 1;
       } else if (currentWindowStep === 1) {
@@ -200,3 +196,4 @@ function startBot() {
 }
 
 startBot();
+    
