@@ -30,16 +30,14 @@ const RECONNECT_DELAY_MS = 5000;
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 let spawnerInterval: ReturnType<typeof setInterval> | null = null;
 let antiAfkInterval: ReturnType<typeof setInterval> | null = null;
-let slot52Interval: ReturnType<typeof setInterval> | null = null;
-
-let currentWindowStep = 0;
+let dropperInterval: ReturnType<typeof setInterval> | null = null;
 
 function scheduleReconnect(reason: string) {
   console.log(`[Spawner-Bot] 🔄 إعادة الاتصال خلال 5 ثوانٍ بسبب: ${reason}`);
   if (reconnectTimeout) return;
   if (spawnerInterval) clearInterval(spawnerInterval);
   if (antiAfkInterval) clearInterval(antiAfkInterval);
-  if (slot52Interval) clearInterval(slot52Interval);
+  if (dropperInterval) clearInterval(dropperInterval);
 
   reconnectTimeout = setTimeout(() => {
     reconnectTimeout = null;
@@ -49,7 +47,6 @@ function scheduleReconnect(reason: string) {
 
 function startBot() {
   console.log('[Spawner-Bot] ⏳ جاري بدء الاتصال بالسيرفر zero7even.net...');
-  currentWindowStep = 0;
 
   const bot = mineflayer.createBot({
     ...BOT_CONFIG,
@@ -62,13 +59,25 @@ function startBot() {
     console.log('[Spawner-Bot] ✅ تم الاتصال بالهوست وقبول الحساب!');
   });
 
-  // دالة الضغط على الخانة 52
-  async function clickSlot52() {
-    try {
-      console.log('[Spawner-Bot] 🔘 الضغط الدوري على الخانة 52...');
-      await bot.clickWindow(52, 0, 0);
-    } catch (err) {
-      console.log('[Spawner-Bot] ⚠️ فشل الضغط على الخانة 52.');
+  // دالة البحث والضغط على أيتم الـ Dropper
+  async function clickDropperItem(window: any) {
+    const dropperItem = window.slots.find((item: any) => {
+      if (!item) return false;
+      const nameMatch = item.name && item.name.includes('dropper');
+      const customName = item.customName || item.displayName || '';
+      const textMatch = customName.toLowerCase().includes('drop');
+      return nameMatch || textMatch;
+    });
+
+    if (dropperItem) {
+      try {
+        console.log(`[Spawner-Bot] 🔘 الضغط الدوري على ايتم الـ Dropper (الخانة ${dropperItem.slot})...`);
+        await bot.clickWindow(dropperItem.slot, 0, 0);
+      } catch (err) {
+        console.log('[Spawner-Bot] ⚠️ فشل الضغط على ايتم الـ Dropper.');
+      }
+    } else {
+      console.log('[Spawner-Bot] ⚠️ لم يتم العثور على ايتم Dropper في الواجهة!');
     }
   }
 
@@ -81,11 +90,17 @@ function startBot() {
 
     if (spawnerBlock) {
       try {
-        console.log('[Spawner-Bot] 🎯 العثور على السبونر! جاري النظر والضغط كليك يمين...');
-        currentWindowStep = 0;
-        if (slot52Interval) clearInterval(slot52Interval);
+        console.log('[Spawner-Bot] 🎯 العثور على السبونر! جاري التثبيت والضغط كليك يمين...');
+        if (dropperInterval) clearInterval(dropperInterval);
 
+        // إلغاء التخفي والحركة تماماً قبل التفاعل
+        bot.setControlState('sneak', false);
+        bot.clearControlStates();
+
+        // النظر المباشر نحو السبونر والانتظار نصف ثانية لتقبل السيرفر الحركة
         await bot.lookAt(spawnerBlock.position.offset(0.5, 0.5, 0.5));
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
         await bot.activateBlock(spawnerBlock);
         console.log('[Spawner-Bot] ✅ تم إرسال أمر الضغط على السبونر بنجاح!');
       } catch (err) {
@@ -96,36 +111,55 @@ function startBot() {
     }
   }
 
-  // التعامل مع فتح القوائم
+  // التعامل مع فتح القوائم والبحث عن الأيتم الذكي
   bot.on('windowOpen', async (window) => {
-    console.log(`[Spawner-Bot] 📂 تم فتح واجهة بنجاح (حجمها: ${window.slots.length} خانة)!`);
+    console.log(`[Spawner-Bot] 📂 تم فتح واجهة جديدة ثابتة (حجمها: ${window.slots.length} خانة)...`);
 
     setTimeout(async () => {
-      if (currentWindowStep === 0) {
-        console.log('[Spawner-Bot] 🔘 الواجهة الأولى: الضغط على الخانة 11...');
-        try {
-          await bot.clickWindow(11, 0, 0);
-        } catch (e) {
-          console.log('[Spawner-Bot] ❌ خطأ أثناء الضغط على الخانة 11:', e);
-        }
-        currentWindowStep = 1;
-      } else if (currentWindowStep === 1) {
-        console.log('[Spawner-Bot] 🔘 الواجهة الثانية: بدء تكرار الضغط على الخانة 52 كل 15 ثانية...');
-        await clickSlot52();
+      // 1. البحث عن ايتم الـ Chest (Spawner Storage)
+      const storageItem = window.slots.find((item: any) => {
+        if (!item) return false;
+        const nameMatch = item.name && item.name.includes('chest');
+        const customName = item.customName || item.displayName || '';
+        const textMatch = customName.toLowerCase().includes('storage');
+        return nameMatch || textMatch;
+      });
 
-        if (slot52Interval) clearInterval(slot52Interval);
-        slot52Interval = setInterval(() => {
-          clickSlot52();
+      // 2. البحث عن ايتم الـ Dropper (Drop All Items)
+      const dropperItem = window.slots.find((item: any) => {
+        if (!item) return false;
+        const nameMatch = item.name && item.name.includes('dropper');
+        const customName = item.customName || item.displayName || '';
+        const textMatch = customName.toLowerCase().includes('drop');
+        return nameMatch || textMatch;
+      });
+
+      if (storageItem) {
+        console.log(`[Spawner-Bot] 📦 تم إيجاد ايتم Spawner Storage (Chest) في الخانة ${storageItem.slot}! جاري الضغط...`);
+        try {
+          await bot.clickWindow(storageItem.slot, 0, 0);
+        } catch (e) {
+          console.log('[Spawner-Bot] ❌ خطأ أثناء الضغط على Chest:', e);
+        }
+      } else if (dropperItem) {
+        console.log(`[Spawner-Bot] 💧 تم إيجاد ايتم Drop All Items (Dropper) في الخانة ${dropperItem.slot}!`);
+        await clickDropperItem(window);
+
+        if (dropperInterval) clearInterval(dropperInterval);
+        dropperInterval = setInterval(() => {
+          clickDropperItem(window);
         }, 15000);
+      } else {
+        console.log('[Spawner-Bot] ⚠️ لم يتم التعرف على الأيتم المطلوبة داخل الواجهة!');
       }
     }, 1200);
   });
 
   bot.on('windowClose', () => {
     console.log('[Spawner-Bot] 🔒 تم إغلاق القائمة.');
-    if (slot52Interval) {
-      clearInterval(slot52Interval);
-      slot52Interval = null;
+    if (dropperInterval) {
+      clearInterval(dropperInterval);
+      dropperInterval = null;
     }
   });
 
@@ -151,20 +185,17 @@ function startBot() {
 
     if (spawnerInterval) clearInterval(spawnerInterval);
     if (antiAfkInterval) clearInterval(antiAfkInterval);
-    if (slot52Interval) clearInterval(slot52Interval);
+    if (dropperInterval) clearInterval(dropperInterval);
 
     antiAfkInterval = setInterval(() => {
       bot.setControlState('jump', true);
       setTimeout(() => bot.setControlState('jump', false), 500);
     }, 30000);
 
-    // انتظار 10 ثوانٍ ثم البدء بالضغط على السبونر
     console.log('[Spawner-Bot] ⏳ الانتظار 10 ثوانٍ قبل التفاعل مع السبونر...');
     setTimeout(() => {
-      bot.setControlState('sneak', true);
       interactWithSpawner();
 
-      // تكرار محاولة فتح السبونر كل 3 دقائق
       spawnerInterval = setInterval(() => {
         interactWithSpawner();
       }, 180000);
@@ -191,4 +222,3 @@ function startBot() {
 }
 
 startBot();
-      
