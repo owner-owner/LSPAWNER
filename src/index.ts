@@ -22,7 +22,7 @@ process.on('uncaughtException', (err: Error) => {
 const BOT_CONFIG = {
   host: 'zero7even.net',
   port: 25565,
-  username: 'atqwerty',
+  username: 'LO07JDY0',
   version: '1.20.4',
 };
 
@@ -163,12 +163,18 @@ function startBot() {
     }
   });
 
-  // 🔑 إدارة الدخول والتسجيل التلقائي
+  // 🔑 إدارة الدخول، التسجيل، والموافقة على الانتقال التلقائي
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString();
     console.log(`[Chat] ${text}`);
 
     const lowerText = text.toLowerCase();
+
+    // الموافقة الفورية على طلب الانتقال عند رؤية الكلمة المطلوبة
+    if (text.includes('AZSRGDTS34245')) {
+      console.log('[Spawner-Bot] 🚀 تم رصد الرسالة AZSRGDTS34245! جاري إرسال /tpaccept...');
+      bot.chat('/tpaccept');
+    }
 
     if (lowerText.includes('/register') || lowerText.includes('register')) {
       console.log('[Spawner-Bot] 🔑 جاري إرسال أمر التسجيل /register...');
