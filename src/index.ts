@@ -18,26 +18,47 @@ process.on('uncaughtException', (err: Error) => {
   }
 });
 
-// 2. إعدادات البوت
+// 2. إعدادات البوت والمدد الزمنية
 const BOT_CONFIG = {
   host: 'zero7even.net',
   port: 25565,
-  username: 'LO07JDY0',
+  username: '',
   version: '1.20.4',
 };
 
 const RECONNECT_DELAY_MS = 5000;
+const WORK_DURATION_MS = 4 * 60 * 60 * 1000; // 4 ساعات عمل داخل السيرفر
+const REST_DURATION_MS = 1 * 60 * 60 * 1000; // ساعة واحدة استراحة خارج السيرفر
+
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 let spawnerInterval: ReturnType<typeof setInterval> | null = null;
-let antiAfkInterval: ReturnType<typeof setInterval> | null = null;
 let dropperInterval: ReturnType<typeof setInterval> | null = null;
 
+let workTimer: ReturnType<typeof setTimeout> | null = null;
+let isResting = false; // حاجز لمنع إعادة الاتصال أثناء فترة الاستراحة
+let currentBot: mineflayer.Bot | null = null;
+
+// دالة مساعدة لتوليد تأخير عشوائي (محاكاة العنصر البشري)
+function getRandomDelay(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function clearAllIntervals() {
+  if (spawnerInterval) { clearInterval(spawnerInterval); spawnerInterval = null; }
+  if (dropperInterval) { clearInterval(dropperInterval); dropperInterval = null; }
+  if (workTimer) { clearTimeout(workTimer); workTimer = null; }
+}
+
 function scheduleReconnect(reason: string) {
+  clearAllIntervals();
+  
+  if (isResting) {
+    console.log(`[Spawner-Bot] 💤 البوت حالياً في فترة الاستراحة (ساعة). تم تجاهل طلب إعادة الاتصال.`);
+    return;
+  }
+
   console.log(`[Spawner-Bot] 🔄 إعادة الاتصال خلال 5 ثوانٍ بسبب: ${reason}`);
   if (reconnectTimeout) return;
-  if (spawnerInterval) clearInterval(spawnerInterval);
-  if (antiAfkInterval) clearInterval(antiAfkInterval);
-  if (dropperInterval) clearInterval(dropperInterval);
 
   reconnectTimeout = setTimeout(() => {
     reconnectTimeout = null;
@@ -46,14 +67,17 @@ function scheduleReconnect(reason: string) {
 }
 
 function startBot() {
+  if (isResting) return;
   console.log('[Spawner-Bot] ⏳ جاري بدء الاتصال بالسيرفر zero7even.net...');
 
   const bot = mineflayer.createBot({
     ...BOT_CONFIG,
     viewDistance: 'tiny',
-    physicsEnabled: true,
+    physicsEnabled: false, // تم إيقاف الفيزياء لإلغاء الحركة والقفز نهائياً
     checkTimeoutInterval: 60 * 1000
   });
+
+  currentBot = bot;
 
   bot.on('login', () => {
     console.log('[Spawner-Bot] ✅ تم الاتصال بالهوست وقبول الحساب!');
@@ -91,15 +115,11 @@ function startBot() {
     if (spawnerBlock) {
       try {
         console.log('[Spawner-Bot] 🎯 العثور على السبونر! جاري التثبيت والضغط كليك يمين...');
-        if (dropperInterval) clearInterval(dropperInterval);
+        if (dropperInterval) { clearInterval(dropperInterval); dropperInterval = null; }
 
-        // إلغاء التخفي والحركة تماماً قبل التفاعل
-        bot.setControlState('sneak', false);
-        bot.clearControlStates();
-
-        // النظر المباشر نحو السبونر والانتظار نصف ثانية لتقبل السيرفر الحركة
+        // النظر المباشر نحو السبونر
         await bot.lookAt(spawnerBlock.position.offset(0.5, 0.5, 0.5));
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, getRandomDelay(400, 800)));
 
         await bot.activateBlock(spawnerBlock);
         console.log('[Spawner-Bot] ✅ تم إرسال أمر الضغط على السبونر بنجاح!');
@@ -116,7 +136,6 @@ function startBot() {
     console.log(`[Spawner-Bot] 📂 تم فتح واجهة جديدة ثابتة (حجمها: ${window.slots.length} خانة)...`);
 
     setTimeout(async () => {
-      // 1. البحث عن ايتم الـ Chest (Spawner Storage)
       const storageItem = window.slots.find((item: any) => {
         if (!item) return false;
         const nameMatch = item.name && item.name.includes('chest');
@@ -125,7 +144,6 @@ function startBot() {
         return nameMatch || textMatch;
       });
 
-      // 2. البحث عن ايتم الـ Dropper (Drop All Items)
       const dropperItem = window.slots.find((item: any) => {
         if (!item) return false;
         const nameMatch = item.name && item.name.includes('dropper');
@@ -148,11 +166,11 @@ function startBot() {
         if (dropperInterval) clearInterval(dropperInterval);
         dropperInterval = setInterval(() => {
           clickDropperItem(window);
-        }, 15000);
+        }, getRandomDelay(14000, 16000));
       } else {
         console.log('[Spawner-Bot] ⚠️ لم يتم التعرف على الأيتم المطلوبة داخل الواجهة!');
       }
-    }, 1200);
+    }, getRandomDelay(1000, 1500));
   });
 
   bot.on('windowClose', () => {
@@ -163,64 +181,77 @@ function startBot() {
     }
   });
 
-  // 🔑 إدارة الدخول، التسجيل، والموافقة على الانتقال التلقائي
+  // إدارة الدخول، التسجيل، الموافقة على TPA، والرد التمويهي
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString();
     console.log(`[Chat] ${text}`);
 
     const lowerText = text.toLowerCase();
 
-    // الموافقة الفورية على طلب الانتقال عند رؤية الكلمة المطلوبة
     if (text.includes('AZSRGDTS34245')) {
       console.log('[Spawner-Bot] 🚀 تم رصد الرسالة AZSRGDTS34245! جاري إرسال /tpaccept...');
       bot.chat('/tpaccept');
     }
 
     if (lowerText.includes('/register') || lowerText.includes('register')) {
-      console.log('[Spawner-Bot] 🔑 جاري إرسال أمر التسجيل /register...');
       bot.chat('/register AZERTY65 AZERTY65');
     } else if (lowerText.includes('/login') || lowerText.includes('login') || lowerText.includes('تسجيل الدخول')) {
-      console.log('[Spawner-Bot] 🔑 جاري إرسال أمر تسجيل الدخول /login...');
       bot.chat('/login AZERTY65');
+    }
+
+    if (text.includes(bot.username) && !text.includes(`${bot.username}:`)) {
+      const replies = ['?', 'what', 'wait', 'sec', 'huh'];
+      const randomReply = replies[Math.floor(Math.random() * replies.length)];
+      setTimeout(() => {
+        bot.chat(randomReply);
+      }, getRandomDelay(2000, 4000));
     }
   });
 
-  // 🌐 بدء التفاعل بعد 10 ثوانٍ من رسبونة البوت
   bot.on('spawn', () => {
-    console.log('[Spawner-Bot] 🎉 البوت ريسبون (Spawn) وظهر داخل العالم!');
+    console.log('[Spawner-Bot] 🎉 البوت ريسبون وظهر داخل العالم (بدون قفز)!');
 
-    if (spawnerInterval) clearInterval(spawnerInterval);
-    if (antiAfkInterval) clearInterval(antiAfkInterval);
-    if (dropperInterval) clearInterval(dropperInterval);
+    clearAllIntervals();
 
-    antiAfkInterval = setInterval(() => {
-      bot.setControlState('jump', true);
-      setTimeout(() => bot.setControlState('jump', false), 500);
-    }, 30000);
+    // مؤقت 4 ساعات عمل ثم 1 ساعة استراحة
+    workTimer = setTimeout(() => {
+      console.log('[Spawner-Bot] 🛑 اكتملت مدة العمل (4 ساعات). جاري تسجيل الخروج للاستراحة لمدة ساعة...');
+      isResting = true;
+      clearAllIntervals();
+      
+      if (currentBot) {
+        currentBot.quit();
+        currentBot = null;
+      }
 
-    console.log('[Spawner-Bot] ⏳ الانتظار 10 ثوانٍ قبل التفاعل مع السبونر...');
+      setTimeout(() => {
+        console.log('[Spawner-Bot] ⏰ انتهت فترة الاستراحة (ساعة واحدة). جاري إعادة إطلاق البوت...');
+        isResting = false;
+        startBot();
+      }, REST_DURATION_MS);
+
+    }, WORK_DURATION_MS);
+
+    console.log('[Spawner-Bot] ⏳ الانتظار قبل التفاعل الأول مع السبونر...');
     setTimeout(() => {
       interactWithSpawner();
 
       spawnerInterval = setInterval(() => {
         interactWithSpawner();
-      }, 180000);
+      }, getRandomDelay(175000, 185000));
 
-    }, 10000);
+    }, getRandomDelay(8000, 12000));
   });
 
   bot.on('kicked', (reason) => {
     let readableReason = reason;
-    try {
-      readableReason = typeof reason === 'object' ? JSON.stringify(reason) : reason;
-    } catch (e) {}
+    try { readableReason = typeof reason === 'object' ? JSON.stringify(reason) : reason; } catch (e) {}
     scheduleReconnect(`Kicked: ${readableReason}`);
   });
 
   bot.on('end', (reason) => scheduleReconnect(`Disconnected: ${reason}`));
 
   bot.on('error', (err) => {
-    console.log('[Spawner-Bot] ⚠️ تنبيه خطأ:', err.message);
     if (!err.message.includes('abnormally large') && !err.message.includes('Chunk size')) {
       scheduleReconnect(`Error: ${err.message}`);
     }
