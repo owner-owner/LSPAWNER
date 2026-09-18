@@ -22,7 +22,7 @@ process.on('uncaughtException', (err: Error) => {
 const BOT_CONFIG = {
   host: 'zero7even.net',
   port: 25565,
-  username: 'LZADGREE',
+  username: 'LZADGRE',
   version: '1.20.4',
 };
 
