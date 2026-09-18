@@ -23,7 +23,7 @@ const BOT_CONFIG = {
   host: 'zero7even.net',
   port: 25565,
   username: 'LZADGRE',
-  version: '1.20.4',
+  version: '1.20.5',
 };
 
 const RECONNECT_DELAY_MS = 5000;
